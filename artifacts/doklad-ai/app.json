@@ -17,8 +17,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "ai.doklad.app",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Používáme Face ID pro zabezpečení přístupu do aplikace.",
-        "NSCameraUsageDescription": "Kamera je potřeba pro skenování dokladů."
+        "NSFaceIDUsageDescription": "We use Face ID to secure access to the app. / Používáme Face ID pro zabezpečení přístupu do aplikace.",
+        "NSCameraUsageDescription": "The camera is used to scan receipts and invoices. / Kamera slouží ke skenování účtenek a faktur.",
+        "NSPhotoLibraryUsageDescription": "Access to photos allows you to upload documents from your gallery. / Přístup k fotkám umožňuje nahrát doklady z galerie."
       }
     },
     "android": {
@@ -47,9 +48,15 @@
       "expo-font",
       "expo-web-browser",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "The camera is used to scan receipts and invoices. / Kamera slouží ke skenování účtenek a faktur."
+        }
+      ],
+      [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Používáme Face ID pro zabezpečení přístupu do aplikace."
+          "faceIDPermission": "We use Face ID to secure access to the app. / Používáme Face ID pro zabezpečení přístupu do aplikace."
         }
       ],
       [

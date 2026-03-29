@@ -68,20 +68,31 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 
 Expo React Native mobile app for Doklad.ai — an accounting/invoicing web application wrapper.
 
-- **WebView**: Loads `https://doklad.ai` in a native WebView with pull-to-refresh, back navigation, error handling
+- **WebView**: Loads `https://doklad.ai` in a native WebView with pull-to-refresh, back navigation, error handling, origin-restricted navigation
+- **Document Scanner**: Camera-based receipt/invoice scanning via `expo-camera`, with gallery import, base64 encoding, and bridge injection to WebView
+- **JS Bridge**: Typed message protocol (`lib/bridge.ts`) for native↔web communication; messages: `DOCUMENT_SCANNED`, `BIOMETRIC_STATUS`, `NOTIFICATION_TOKEN`, `APP_READY`; only injected on trusted origins
+- **Native Settings**: Settings screen with biometric toggle, notification status, privacy/terms links, app version
+- **Offline Mode**: NetInfo-based connectivity detection, branded offline screen, auto-reload on reconnect
 - **Biometric auth**: Face ID / Touch ID via `expo-local-authentication`, managed by `context/AuthContext.tsx`
 - **Push notifications**: Via `expo-notifications`, managed by `context/NotificationContext.tsx`
 - **Splash screen**: Custom branded splash with blue (#1A56DB) background
 - **App icon**: Custom generated icon at `assets/images/icon.png`
 - **EAS Build**: Configured via `eas.json` with development, preview, and production profiles
 - **Bundle IDs**: `ai.doklad.app` (iOS & Android)
+- **Security**: WebView origin allowlist (`doklad.ai`, `www.doklad.ai`, `app.doklad.ai`); external URLs open in system browser; bridge messages only sent/received on trusted pages
+- **Permissions**: iOS: NSFaceIDUsageDescription, NSCameraUsageDescription, NSPhotoLibraryUsageDescription (bilingual EN/CZ); Android: USE_BIOMETRIC, USE_FINGERPRINT, CAMERA, RECEIVE_BOOT_COMPLETED
 
 Key files:
 - `app/index.tsx` — Main entry, shows lock screen or WebView based on auth state
-- `components/WebViewScreen.tsx` — WebView component loading doklad.ai
+- `components/WebViewScreen.tsx` — WebView with FAB menu (scanner + settings), bridge injection, offline handling
+- `components/DocumentScanner.tsx` — Camera scanner with gallery import and image preview/confirm flow
+- `components/SettingsScreen.tsx` — Native settings (biometric, notifications, legal links, version)
+- `components/OfflineScreen.tsx` — Branded offline screen with retry
 - `components/BiometricLockScreen.tsx` — Biometric authentication screen
 - `context/AuthContext.tsx` — Biometric auth state management
 - `context/NotificationContext.tsx` — Push notification registration and handling
+- `context/NetworkContext.tsx` — Network connectivity state and URL tracking
+- `lib/bridge.ts` — Typed message protocol for WebView↔native communication
 - `eas.json` — EAS Build configuration for Android & iOS
 
 ### `lib/db` (`@workspace/db`)

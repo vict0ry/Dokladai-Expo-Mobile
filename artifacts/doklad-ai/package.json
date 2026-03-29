@@ -56,7 +56,10 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@react-native-community/netinfo": "~11.4.1",
+    "expo-camera": "~16.0.18",
     "expo-device": "^8.0.10",
+    "expo-file-system": "~18.0.12",
     "expo-local-authentication": "^17.0.8",
     "expo-notifications": "^0.32.16",
     "expo-secure-store": "^15.0.8",

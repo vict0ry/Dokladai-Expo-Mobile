@@ -27,14 +27,19 @@ import OfflineScreen from "./OfflineScreen";
 
 const WEB_APP_URL = "https://doklad.ai";
 
-const TRUSTED_ORIGINS = [
-  "https://doklad.ai",
-  "https://www.doklad.ai",
-  "https://app.doklad.ai",
-];
+const TRUSTED_HOSTS = new Set([
+  "doklad.ai",
+  "www.doklad.ai",
+  "app.doklad.ai",
+]);
 
 function isTrustedUrl(url: string): boolean {
-  return TRUSTED_ORIGINS.some((origin) => url.startsWith(origin));
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && TRUSTED_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
 }
 
 export default function WebViewScreen() {
@@ -56,6 +61,7 @@ export default function WebViewScreen() {
   const { isConnected, lastVisitedUrl, saveCurrentUrl } = useNetwork();
   const { isBiometricEnabled } = useAuth();
   const { expoPushToken } = useNotifications();
+  const [wasOffline, setWasOffline] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -91,10 +97,31 @@ export default function WebViewScreen() {
   }
 
   useEffect(() => {
-    if (isConnected && hasError) {
+    if (!isConnected) {
+      setWasOffline(true);
+    } else if (isConnected && (hasError || wasOffline)) {
+      setWasOffline(false);
       forceReload();
     }
   }, [isConnected]);
+
+  useEffect(() => {
+    if (webViewRef.current && isTrustedUrl(currentUrl)) {
+      const msg = createBridgeMessage("BIOMETRIC_STATUS", {
+        enabled: isBiometricEnabled,
+      });
+      webViewRef.current.injectJavaScript(buildInjectionScript(msg));
+    }
+  }, [isBiometricEnabled]);
+
+  useEffect(() => {
+    if (webViewRef.current && expoPushToken && isTrustedUrl(currentUrl)) {
+      const msg = createBridgeMessage("NOTIFICATION_TOKEN", {
+        token: expoPushToken,
+      });
+      webViewRef.current.injectJavaScript(buildInjectionScript(msg));
+    }
+  }, [expoPushToken]);
 
   function toggleFab() {
     if (Platform.OS !== "web") {
@@ -272,7 +299,7 @@ export default function WebViewScreen() {
         <WebView
           key={webViewKey}
           ref={webViewRef}
-          source={{ uri: WEB_APP_URL }}
+          source={{ uri: lastVisitedUrl && isTrustedUrl(lastVisitedUrl) ? lastVisitedUrl : WEB_APP_URL }}
           style={styles.webview}
           onLoadStart={() => setIsLoading(true)}
           onLoadEnd={() => {

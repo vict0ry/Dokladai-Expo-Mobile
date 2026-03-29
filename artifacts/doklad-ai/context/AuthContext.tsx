@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { Platform, AppState, AppStateStatus } from "react-native";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import { Platform } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 
@@ -36,25 +36,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [biometricType, setBiometricType] = useState<string | null>(null);
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const isAuthenticating = useRef(false);
 
   useEffect(() => {
     checkBiometricSupport();
   }, []);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", handleAppStateChange);
-    return () => subscription.remove();
-  }, [isBiometricEnabled]);
-
-  const handleAppStateChange = useCallback(
-    (nextState: AppStateStatus) => {
-      if (nextState === "active" && isBiometricEnabled) {
-        setIsAuthenticated(false);
-        authenticate();
-      }
-    },
-    [isBiometricEnabled]
-  );
 
   async function checkBiometricSupport() {
     try {
@@ -87,16 +73,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsBiometricEnabled(true);
         await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, "true");
         await SecureStore.setItemAsync(FIRST_LAUNCH_KEY, "true");
+        setIsLoading(false);
         await authenticate();
       } else if (storedEnabled === "true" && available) {
         setIsBiometricEnabled(true);
+        setIsLoading(false);
         await authenticate();
       } else {
         setIsAuthenticated(true);
+        setIsLoading(false);
       }
     } catch {
       setIsAuthenticated(true);
-    } finally {
       setIsLoading(false);
     }
   }
@@ -106,6 +94,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(true);
       return true;
     }
+
+    if (isAuthenticating.current) {
+      return false;
+    }
+
+    isAuthenticating.current = true;
 
     try {
       const result = await LocalAuthentication.authenticateAsync({
@@ -122,6 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     } catch {
       return false;
+    } finally {
+      isAuthenticating.current = false;
     }
   }
 

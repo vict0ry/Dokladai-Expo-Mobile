@@ -13,10 +13,11 @@ import Colors from "@/constants/colors";
 
 interface OfflineScreenProps {
   lastUrl: string | null;
+  lastTitle: string | null;
   onRetry: () => void;
 }
 
-export default function OfflineScreen({ lastUrl, onRetry }: OfflineScreenProps) {
+export default function OfflineScreen({ lastUrl, lastTitle, onRetry }: OfflineScreenProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -44,11 +45,11 @@ export default function OfflineScreen({ lastUrl, onRetry }: OfflineScreenProps) 
           Zkontrolujte připojení k internetu.{"\n"}
           Aplikace se automaticky obnoví po připojení.
         </Text>
-        {lastUrl && (
+        {(lastTitle || lastUrl) && (
           <View style={[styles.lastUrlContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Feather name="clock" size={14} color={colors.textSecondary} />
             <Text style={[styles.lastUrlText, { color: colors.textSecondary }]} numberOfLines={1}>
-              Poslední stránka: {lastUrl.replace("https://doklad.ai", "")}
+              {lastTitle ? `Poslední stránka: ${lastTitle}` : `Poslední stránka: ${lastUrl?.replace("https://doklad.ai", "") || ""}`}
             </Text>
           </View>
         )}

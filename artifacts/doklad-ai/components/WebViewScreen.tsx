@@ -58,7 +58,7 @@ export default function WebViewScreen() {
   const colors = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
 
-  const { isConnected, lastVisitedUrl, saveCurrentUrl } = useNetwork();
+  const { isConnected, lastVisitedUrl, lastPageTitle, saveCurrentUrl } = useNetwork();
   const { isBiometricEnabled } = useAuth();
   const { expoPushToken } = useNotifications();
   const [wasOffline, setWasOffline] = useState(false);
@@ -223,6 +223,7 @@ export default function WebViewScreen() {
         <StatusBar style={isDark ? "light" : "dark"} />
         <OfflineScreen
           lastUrl={lastVisitedUrl}
+          lastTitle={lastPageTitle}
           onRetry={forceReload}
         />
       </>
@@ -326,7 +327,7 @@ export default function WebViewScreen() {
             setCanGoBack(!!navState.canGoBack);
             if (navState.url) {
               setCurrentUrl(navState.url);
-              saveCurrentUrl(navState.url);
+              saveCurrentUrl(navState.url, navState.title || undefined);
             }
           }}
           onMessage={handleWebViewMessage}

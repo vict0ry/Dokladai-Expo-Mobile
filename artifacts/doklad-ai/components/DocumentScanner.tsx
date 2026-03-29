@@ -145,11 +145,25 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
           <TouchableOpacity onPress={retake} style={styles.headerButton}>
             <Feather name="arrow-left" size={24} color="#FFF" />
           </TouchableOpacity>
-          <Text style={styles.previewTitle}>Kontrola dokladu</Text>
+          <Text style={styles.previewTitle}>Oříznutí a kontrola</Text>
           <View style={styles.headerButton} />
         </View>
 
-        <Image source={{ uri: capturedImage }} style={styles.previewImage} resizeMode="contain" />
+        <View style={styles.cropContainer}>
+          <Image source={{ uri: capturedImage }} style={styles.previewImage} resizeMode="contain" />
+          <View style={styles.cropOverlay} pointerEvents="none">
+            <View style={styles.cropFrame}>
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
+            </View>
+          </View>
+        </View>
+
+        <Text style={styles.cropHint}>
+          Zkontrolujte, zda je doklad čitelný
+        </Text>
 
         <View style={[styles.previewActions, { paddingBottom: insets.bottom + 20 }]}>
           <TouchableOpacity
@@ -371,6 +385,27 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: 17,
     fontFamily: "Inter_600SemiBold",
+  },
+  cropContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  cropOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cropFrame: {
+    width: "85%",
+    aspectRatio: 0.7,
+    position: "relative",
+  },
+  cropHint: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    paddingVertical: 8,
   },
   previewImage: {
     flex: 1,

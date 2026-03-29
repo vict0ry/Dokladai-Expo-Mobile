@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "T7FNmklRBewODCg7lqI3A"
+uri = "file://artifacts/doklad-ai/BRIDGE_SPEC.md"
+type = "text"
+title = "Bridge specifikace pro vývojáře doklad.ai"

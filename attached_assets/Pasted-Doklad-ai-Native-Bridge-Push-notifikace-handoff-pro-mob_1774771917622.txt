@@ -1,0 +1,71 @@
+Doklad.ai — Native Bridge & Push notifikace (handoff pro mobilního developera)
+Jak funguje komunikace web ↔ native app
+Aplikace běží jako webová React appka uvnitř WebView (Expo). Komunikace probíhá přes JS Bridge — obousměrné posílání zpráv.
+
+Detekce native prostředí:
+
+Web kontroluje window.ReactNativeWebView — pokud existuje, jsme v native appce
+Web → Native (příkazy z webu do appky):
+
+window.ReactNativeWebView.postMessage(JSON.stringify({ action, payload }))
+Native → Web (odpovědi/eventy z appky do webu):
+
+Přes window.addEventListener('message', ...)
+Nebo přes custom hook window.DokladBridge.onMessage
+Podporované akce (bridge protocol)
+Akce	Směr	Popis
+APP_READY	Native → Web	Handshake při startu — posílá platform, pushToken, biometricEnabled
+NOTIFICATION_TOKEN	Native → Web	Nový push token (když se změní)
+DOCUMENT_SCANNED	Native → Web	Výsledek skenování — base64, filename, mimeType
+BIOMETRIC_STATUS	Native → Web	Stav biometrického ověření
+OPEN_SCANNER	Web → Native	Příkaz na otevření skeneru/kamery
+OPEN_SETTINGS	Web → Native	Příkaz na otevření systémového nastavení
+Push notifikace — kompletní flow
+1. Registrace tokenu (native → server):
+
+Appka při startu pošle APP_READY s pushToken a platform (ios/android)
+Web to odchytí a zaregistruje přes dva endpointy:
+POST /api/devices/register — body: { token: string, platform: 'ios' | 'android' }
+POST /api/notifications/device-token — body: { token: string, platform?: string }
+Server uloží token do tabulky device_tokens (s userId + companyId), při konfliktu updatuje
+2. Odesílání notifikací (server → Expo → native):
+
+Backend používá Expo Push API (https://exp.host/--/api/v2/push/send)
+Služba push-notification-service.ts vezme všechny tokeny uživatele a odešle přes Expo
+Automaticky čistí neplatné tokeny (DeviceNotRegistered)
+3. Odregistrace tokenu (logout):
+
+Při odhlášení web volá DELETE /api/devices/unregister — body: { token: string }
+Token se smaže z DB
+4. Kdy se posílají notifikace:
+
+Uhrazení faktury, faktura po splatnosti, nový náklad, spárování platby, AI insighty, a dalších 20+ typů eventů
+Notifikace se ukládají i do DB (in-app) + volitelně email + push
+API endpointy pro notifikace
+Endpoint	Metoda	Popis
+/api/devices/register	POST	Registrace push tokenu
+/api/devices/unregister	DELETE	Odregistrace push tokenu
+/api/notifications	GET	Seznam in-app notifikací
+/api/notifications/unread-count	GET	Počet nepřečtených
+/api/notifications/:id/read	PATCH	Označit jako přečtené
+/api/notifications/mark-all-read	POST	Označit vše jako přečtené
+/api/notifications/preferences	GET/PUT	Nastavení notifikací
+Všechny endpointy vyžadují JWT auth header: Authorization: Bearer <token>
+
+Klíčové soubory (co si developer má prostudovat)
+client/src/lib/native-bridge.ts — jádro bridge komunikace
+client/src/hooks/use-native-bridge.ts — React hook pro správu push token lifecycle
+client/src/contexts/native-app-context.tsx — globální stav native appky (isNative, platform, pushToken)
+client/src/components/native-scan-handler.tsx — handler pro skenování dokumentů
+server/routes/devices.ts — API pro registraci/odregistraci tokenů
+server/routes/notifications.ts — API pro notifikace
+server/services/push-notification-service.ts — odesílání přes Expo Push API
+server/services/notification-service.ts — centrální logika notifikací
+Co native developer musí implementovat ve své appce
+Při startu poslat APP_READY zprávu do WebView s push tokenem a platformou
+Naslouchat na OPEN_SCANNER a OPEN_SETTINGS příkazy z webu
+Po naskenování poslat DOCUMENT_SCANNED zprávu zpět s base64 daty
+Při změně push tokenu poslat NOTIFICATION_TOKEN
+Expo Push Token — appka musí být registrovaná u Expo pro příjem push notifikací
+Chceš, abych ti tohle připravil jako formální Markdown soubor, který můžeš poslat přímo developerovi?
+

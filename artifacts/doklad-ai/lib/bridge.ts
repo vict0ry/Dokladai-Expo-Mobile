@@ -2,10 +2,15 @@ export type BridgeAction =
   | "DOCUMENT_SCANNED"
   | "BIOMETRIC_STATUS"
   | "NOTIFICATION_TOKEN"
-  | "APP_READY";
+  | "APP_READY"
+  | "FILE_PICKED"
+  | "FILE_PICK_CANCELLED"
+  | "DICTATION_RESULT"
+  | "DICTATION_ERROR";
 
 export interface BridgeMessage {
   action: BridgeAction;
+  type: BridgeAction;
   payload: Record<string, unknown>;
   timestamp: number;
 }
@@ -16,6 +21,7 @@ export function createBridgeMessage(
 ): BridgeMessage {
   return {
     action,
+    type: action,
     payload,
     timestamp: Date.now(),
   };
@@ -26,7 +32,9 @@ export function buildInjectionScript(message: BridgeMessage): string {
   return `
     (function() {
       try {
-        window.postMessage(${JSON.stringify(json)}, '*');
+        window.dispatchEvent(new MessageEvent('message', {
+          data: ${JSON.stringify(json)}
+        }));
         if (window.DokladBridge && typeof window.DokladBridge.onMessage === 'function') {
           window.DokladBridge.onMessage(${JSON.stringify(json)});
         }

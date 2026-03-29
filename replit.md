@@ -70,7 +70,10 @@ Expo React Native mobile app for Doklad.ai — an accounting/invoicing web appli
 
 - **WebView**: Loads `https://doklad.ai` in a native WebView with pull-to-refresh, back navigation, error handling, origin-restricted navigation
 - **Document Scanner**: Camera-based receipt/invoice scanning via `expo-camera`, with gallery import, base64 encoding, and bridge injection to WebView
-- **JS Bridge**: Typed message protocol (`lib/bridge.ts`) for native↔web communication; messages: `DOCUMENT_SCANNED`, `BIOMETRIC_STATUS`, `NOTIFICATION_TOKEN`, `APP_READY`; only injected on trusted origins
+- **JS Bridge**: Typed message protocol (`lib/bridge.ts`) for native↔web communication; web→native: `OPEN_SCANNER`, `OPEN_CAMERA`, `PICK_FILE`, `START_DICTATION`, `STOP_DICTATION`, `OPEN_SETTINGS`; native→web: `FILE_PICKED`, `FILE_PICK_CANCELLED`, `DICTATION_RESULT`, `DICTATION_ERROR`, `BIOMETRIC_STATUS`, `NOTIFICATION_TOKEN`, `APP_READY`; uses `window.dispatchEvent(MessageEvent)` for delivery
+- **OPEN_CAMERA**: Opens camera via `expo-image-picker.launchCameraAsync`, returns base64 photo as `FILE_PICKED`
+- **PICK_FILE**: Opens document picker via `expo-document-picker`, supports images + PDF, returns base64 as `FILE_PICKED`
+- **START_DICTATION**: Speech-to-text via `@react-native-voice/voice` (requires dev build), sends interim + final results as `DICTATION_RESULT`
 - **Native Settings**: Settings screen with biometric toggle, notification status, privacy/terms links, app version
 - **Offline Mode**: NetInfo-based connectivity detection, branded offline screen, auto-reload on reconnect
 - **Biometric auth**: Face ID / Touch ID via `expo-local-authentication`, managed by `context/AuthContext.tsx`
@@ -80,11 +83,11 @@ Expo React Native mobile app for Doklad.ai — an accounting/invoicing web appli
 - **EAS Build**: Configured via `eas.json` with development, preview, and production profiles
 - **Bundle IDs**: `ai.doklad.app` (iOS & Android)
 - **Security**: WebView origin allowlist (`doklad.ai`, `www.doklad.ai`, `app.doklad.ai`); external URLs open in system browser; bridge messages only sent/received on trusted pages
-- **Permissions**: iOS: NSFaceIDUsageDescription, NSCameraUsageDescription, NSPhotoLibraryUsageDescription (bilingual EN/CZ); Android: USE_BIOMETRIC, USE_FINGERPRINT, CAMERA, RECEIVE_BOOT_COMPLETED
+- **Permissions**: iOS: NSFaceIDUsageDescription, NSCameraUsageDescription, NSPhotoLibraryUsageDescription, NSSpeechRecognitionUsageDescription, NSMicrophoneUsageDescription (bilingual EN/CZ); Android: USE_BIOMETRIC, USE_FINGERPRINT, CAMERA, RECORD_AUDIO, RECEIVE_BOOT_COMPLETED
 
 Key files:
 - `app/index.tsx` — Main entry, shows lock screen or WebView based on auth state
-- `components/WebViewScreen.tsx` — WebView with FAB menu (scanner + settings), bridge injection, offline handling
+- `components/WebViewScreen.tsx` — WebView with bridge message handler (camera, file picker, dictation, scanner, settings), offline handling
 - `components/DocumentScanner.tsx` — Camera scanner with gallery import and image preview/confirm flow
 - `components/SettingsScreen.tsx` — Native settings (biometric, notifications, legal links, version)
 - `components/OfflineScreen.tsx` — Branded offline screen with retry

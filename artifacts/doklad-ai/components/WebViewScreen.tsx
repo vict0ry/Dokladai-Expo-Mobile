@@ -8,12 +8,16 @@ import {
   BackHandler,
   Text,
   TouchableOpacity,
+  Alert,
 } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import Colors from "@/constants/colors";
 import { useNetwork } from "@/context/NetworkContext";
 import { useAuth } from "@/context/AuthContext";
@@ -40,6 +44,20 @@ function isTrustedUrl(url: string): boolean {
   }
 }
 
+let voiceModule: any = null;
+
+async function getVoiceModule() {
+  if (voiceModule) return voiceModule;
+  try {
+    voiceModule = (await import("@react-native-voice/voice")).default;
+    return voiceModule;
+  } catch {
+    return null;
+  }
+}
+
+const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024;
+
 export default function WebViewScreen() {
   const webViewRef = useRef<WebView>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,6 +66,7 @@ export default function WebViewScreen() {
   const [showScanner, setShowScanner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(WEB_APP_URL);
+  const lastPartialTranscript = useRef("");
 
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -63,7 +82,7 @@ export default function WebViewScreen() {
     useCallback(() => {
       const onBackPress = () => {
         if (showScanner) {
-          setShowScanner(false);
+          handleScannerClose();
           return true;
         }
         if (showSettings) {
@@ -119,17 +138,151 @@ export default function WebViewScreen() {
     }
   }, [expoPushToken]);
 
+  function sendToWeb(action: Parameters<typeof createBridgeMessage>[0], payload: Record<string, unknown>) {
+    if (!webViewRef.current || !isTrustedUrl(currentUrl)) return;
+    const msg = createBridgeMessage(action, payload);
+    webViewRef.current.injectJavaScript(buildInjectionScript(msg));
+  }
 
   function handleDocumentCaptured(base64: string, filename: string) {
     setShowScanner(false);
-    if (webViewRef.current) {
-      const message = createBridgeMessage("DOCUMENT_SCANNED", {
-        base64,
-        filename,
-        mimeType: "image/jpeg",
-        capturedAt: Date.now(),
+    sendToWeb("FILE_PICKED", {
+      name: filename,
+      size: Math.round(base64.length * 0.75),
+      type: "image/jpeg",
+      base64,
+    });
+  }
+
+  function handleScannerClose() {
+    setShowScanner(false);
+    sendToWeb("FILE_PICK_CANCELLED", {});
+  }
+
+  async function handleOpenCamera() {
+    if (Platform.OS === "web") return;
+
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      sendToWeb("FILE_PICK_CANCELLED", {});
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        base64: true,
+        quality: 0.8,
       });
-      webViewRef.current.injectJavaScript(buildInjectionScript(message));
+
+      if (result.canceled) {
+        sendToWeb("FILE_PICK_CANCELLED", {});
+        return;
+      }
+
+      const asset = result.assets[0];
+      sendToWeb("FILE_PICKED", {
+        name: `photo_${Date.now()}.jpg`,
+        size: asset.fileSize || Math.round((asset.base64?.length || 0) * 0.75),
+        type: asset.mimeType || "image/jpeg",
+        base64: asset.base64 || "",
+      });
+    } catch {
+      sendToWeb("FILE_PICK_CANCELLED", {});
+    }
+  }
+
+  async function handlePickFile(payload?: { accept?: string[] }) {
+    if (Platform.OS === "web") return;
+
+    try {
+      const types = payload?.accept || ["image/*", "application/pdf"];
+      const result = await DocumentPicker.getDocumentAsync({
+        type: types,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        sendToWeb("FILE_PICK_CANCELLED", {});
+        return;
+      }
+
+      const file = result.assets[0];
+
+      if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
+        sendToWeb("FILE_PICK_CANCELLED", { reason: "file_too_large" });
+        Alert.alert("Soubor je příliš velký", "Maximální velikost souboru je 30 MB.");
+        return;
+      }
+
+      const base64 = await FileSystem.readAsStringAsync(file.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      sendToWeb("FILE_PICKED", {
+        name: file.name,
+        size: file.size || Math.round(base64.length * 0.75),
+        type: file.mimeType || "application/octet-stream",
+        base64,
+      });
+    } catch {
+      sendToWeb("FILE_PICK_CANCELLED", {});
+    }
+  }
+
+  async function handleStartDictation(payload?: { lang?: string }) {
+    if (Platform.OS === "web") {
+      sendToWeb("DICTATION_ERROR", { error: "not_supported" });
+      return;
+    }
+
+    const Voice = await getVoiceModule();
+    if (!Voice) {
+      sendToWeb("DICTATION_ERROR", { error: "not_available" });
+      Alert.alert(
+        "Diktování nedostupné",
+        "Pro hlasový vstup je potřeba development build aplikace."
+      );
+      return;
+    }
+
+    try {
+      lastPartialTranscript.current = "";
+
+      Voice.onSpeechResults = (e: any) => {
+        const text = e?.value?.[0] || "";
+        lastPartialTranscript.current = text;
+        sendToWeb("DICTATION_RESULT", { text, isFinal: true });
+      };
+
+      Voice.onSpeechPartialResults = (e: any) => {
+        const text = e?.value?.[0] || "";
+        lastPartialTranscript.current = text;
+        sendToWeb("DICTATION_RESULT", { text, isFinal: false });
+      };
+
+      Voice.onSpeechError = (e: any) => {
+        const errorCode = e?.error?.code || e?.error?.message || "unknown";
+        lastPartialTranscript.current = "";
+        sendToWeb("DICTATION_ERROR", { error: errorCode });
+      };
+
+      await Voice.start(payload?.lang || "cs-CZ");
+    } catch {
+      sendToWeb("DICTATION_ERROR", { error: "start_failed" });
+    }
+  }
+
+  async function handleStopDictation() {
+    const Voice = await getVoiceModule();
+    if (!Voice) return;
+
+    try {
+      await Voice.stop();
+      const finalText = lastPartialTranscript.current;
+      lastPartialTranscript.current = "";
+      sendToWeb("DICTATION_RESULT", { text: finalText, isFinal: true });
+    } catch {
+      sendToWeb("DICTATION_ERROR", { error: "stop_failed" });
     }
   }
 
@@ -157,24 +310,53 @@ export default function WebViewScreen() {
   }
 
   function handleWebViewMessage(event: WebViewMessageEvent) {
-    if (!isTrustedUrl(currentUrl)) return;
+    const eventUrl = event.nativeEvent.url;
+    if (!isTrustedUrl(eventUrl || currentUrl)) return;
 
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.action === "OPEN_SCANNER") {
-        setShowScanner(true);
-      } else if (data.action === "OPEN_SETTINGS") {
-        setShowSettings(true);
+      const action = data.action || data.type;
+
+      switch (action) {
+        case "OPEN_SCANNER":
+          setShowScanner(true);
+          break;
+        case "OPEN_CAMERA":
+          handleOpenCamera();
+          break;
+        case "PICK_FILE":
+          handlePickFile(data.payload);
+          break;
+        case "START_DICTATION":
+          handleStartDictation(data.payload);
+          break;
+        case "STOP_DICTATION":
+          handleStopDictation();
+          break;
+        case "OPEN_SETTINGS":
+          setShowSettings(true);
+          break;
       }
     } catch {
     }
   }
 
+  useEffect(() => {
+    return () => {
+      getVoiceModule().then((Voice) => {
+        if (Voice) {
+          Voice.destroy();
+          Voice.removeAllListeners();
+        }
+      });
+    };
+  }, []);
+
   if (showScanner) {
     return (
       <DocumentScanner
         onDocumentCaptured={handleDocumentCaptured}
-        onClose={() => setShowScanner(false)}
+        onClose={handleScannerClose}
       />
     );
   }
@@ -296,7 +478,6 @@ export default function WebViewScreen() {
           </View>
         )}
       </View>
-
     </View>
   );
 }

@@ -1,0 +1,297 @@
+# Expo Native Bridge — nové příkazy pro WebView
+
+## What & Why
+Web aplikace (doklad.ai) posílá do nativní Expo aplikace přes `window.ReactNativeWebView.postMessage` tři nové příkazy, které nativní strana zatím nezpracovává: `OPEN_CAMERA`, `PICK_FILE` a `START_DICTATION`. Bez jejich implementace tlačítka Fotit, Soubor a Diktovat v AI chatu nefungují. Navíc při zrušení jakékoliv akce (i stávajícího `OPEN_SCANNER`) chybí cancel zpráva zpět do webu, což způsobuje reset celé aplikace.
+
+## Jak web posílá příkazy
+Web posílá JSON string přes `window.ReactNativeWebView.postMessage(...)`:
+```json
+{
+  "action": "OPEN_CAMERA",
+  "type": "OPEN_CAMERA",
+  "timestamp": 1711700000000
+}
+```
+Nativní app musí v `onMessage` WebView handlovat nové `action` hodnoty (viz níže).
+
+## Jak nativní app posílá odpovědi zpět
+Přes `webViewRef.current.injectJavaScript(...)`:
+```javascript
+webViewRef.current.injectJavaScript(`
+  window.dispatchEvent(new MessageEvent('message', {
+    data: JSON.stringify({
+      action: 'FILE_PICKED',
+      type: 'FILE_PICKED',
+      payload: { ... },
+      timestamp: ${Date.now()}
+    })
+  }));
+  true;
+`);
+```
+Alternativně přes `window.DokladBridge.onMessage(json)` pokud tento objekt existuje.
+
+---
+
+## 1. OPEN_CAMERA — Fotit doklad
+
+### Co nativní app musí udělat:
+Když přijde `action: "OPEN_CAMERA"`:
+1. Otevřít kameru (expo-camera nebo expo-image-picker s `launchCameraAsync`)
+2. Po vyfocení poslat zpět `FILE_PICKED` s fotkou
+
+### Odpověď zpět do webu (úspěch):
+```json
+{
+  "action": "FILE_PICKED",
+  "type": "FILE_PICKED",
+  "payload": {
+    "name": "photo_1711700000000.jpg",
+    "size": 245000,
+    "type": "image/jpeg",
+    "base64": "/9j/4AAQ..."
+  },
+  "timestamp": 1711700000000
+}
+```
+
+### Odpověď zpět do webu (zrušení):
+```json
+{
+  "action": "FILE_PICK_CANCELLED",
+  "type": "FILE_PICK_CANCELLED",
+  "timestamp": 1711700000000
+}
+```
+
+### Poznámky:
+- `base64` je čistý base64 string BEZ prefixu `data:image/jpeg;base64,`
+- `size` je velikost v bytech
+- `type` musí být platný MIME type (`image/jpeg`, `image/png`)
+- `name` může být cokoliv, web ho použije jen pro zobrazení
+
+---
+
+## 2. PICK_FILE — Vybrat soubor
+
+### Co nativní app musí udělat:
+Když přijme `action: "PICK_FILE"`, payload obsahuje:
+```json
+{
+  "accept": ["image/*", "application/pdf"]
+}
+```
+1. Otevřít expo-document-picker nebo expo-image-picker (galerie)
+2. Povolit výběr obrázků (JPG, PNG, WebP) a PDF souborů
+3. Po výběru přečíst soubor jako base64 a poslat zpět
+
+### Odpověď zpět do webu (úspěch):
+```json
+{
+  "action": "FILE_PICKED",
+  "type": "FILE_PICKED",
+  "payload": {
+    "name": "faktura.pdf",
+    "size": 150000,
+    "type": "application/pdf",
+    "base64": "JVBERi0..."
+  },
+  "timestamp": 1711700000000
+}
+```
+
+### Odpověď zpět do webu (zrušení):
+```json
+{
+  "action": "FILE_PICK_CANCELLED",
+  "type": "FILE_PICK_CANCELLED",
+  "timestamp": 1711700000000
+}
+```
+
+### Poznámky:
+- Pro čtení souboru jako base64 použít `expo-file-system` → `FileSystem.readAsStringAsync(uri, { encoding: 'base64' })`
+- Max velikost souboru: 30 MB (web validuje, ale native může taky omezit)
+
+---
+
+## 3. START_DICTATION — Hlasový vstup (diktování)
+
+### Co nativní app musí udělat:
+Když přijde `action: "START_DICTATION"`, payload obsahuje:
+```json
+{
+  "lang": "cs-CZ"
+}
+```
+1. Spustit nativní speech-to-text (expo-speech nebo react-native-voice)
+2. Průběžně posílat přepisovaný text zpět do webu
+3. Po dokončení poslat finální výsledek
+
+### Průběžné odpovědi (interim):
+```json
+{
+  "action": "DICTATION_RESULT",
+  "type": "DICTATION_RESULT",
+  "payload": {
+    "text": "potřebuju vystavit",
+    "isFinal": false
+  },
+  "timestamp": 1711700000000
+}
+```
+
+### Finální odpověď:
+```json
+{
+  "action": "DICTATION_RESULT",
+  "type": "DICTATION_RESULT",
+  "payload": {
+    "text": "potřebuju vystavit fakturu za 5000 korun",
+    "isFinal": true
+  },
+  "timestamp": 1711700000000
+}
+```
+
+### Odpověď při chybě:
+```json
+{
+  "action": "DICTATION_ERROR",
+  "type": "DICTATION_ERROR",
+  "payload": {
+    "error": "permission_denied"
+  },
+  "timestamp": 1711700000000
+}
+```
+
+### STOP_DICTATION:
+Web může také poslat `action: "STOP_DICTATION"` — nativní app musí zastavit nahrávání a poslat finální `DICTATION_RESULT` s `isFinal: true`.
+
+---
+
+## 4. OPEN_SCANNER — oprava cancel handleru (existující příkaz)
+
+Scanner už funguje, ale chybí zpráva při zrušení. Když uživatel zruší skenování:
+
+### Odpověď zpět do webu (zrušení):
+```json
+{
+  "action": "FILE_PICK_CANCELLED",
+  "type": "FILE_PICK_CANCELLED",
+  "timestamp": 1711700000000
+}
+```
+
+**DŮLEŽITÉ:** Při zrušení skeneru NESMÍ nativní app navigovat WebView jinam, reloadovat stránku, ani posílat `goBack()`. Stačí poslat cancel zprávu a nechat web v aktuálním stavu.
+
+---
+
+## Shrnutí — co implementovat
+
+| Priorita | Příkaz z webu | Odpověď do webu | Expo balíček |
+|----------|--------------|----------------|-------------|
+| Vysoká | `OPEN_CAMERA` | `FILE_PICKED` / `FILE_PICK_CANCELLED` | expo-image-picker (`launchCameraAsync`) |
+| Vysoká | `PICK_FILE` | `FILE_PICKED` / `FILE_PICK_CANCELLED` | expo-document-picker + expo-file-system |
+| Vysoká | `OPEN_SCANNER` cancel | `FILE_PICK_CANCELLED` | (existující kód, přidat cancel) |
+| Střední | `START_DICTATION` | `DICTATION_RESULT` / `DICTATION_ERROR` | @react-native-voice/voice |
+| Střední | `STOP_DICTATION` | `DICTATION_RESULT` (isFinal: true) | @react-native-voice/voice |
+
+## Příklad implementace v onMessage WebView handleru
+
+```javascript
+// V komponentě s WebView:
+const onMessage = (event) => {
+  const data = JSON.parse(event.nativeEvent.data);
+
+  switch (data.action) {
+    case 'OPEN_SCANNER':
+      handleOpenScanner();  // existující kód
+      break;
+    case 'OPEN_CAMERA':
+      handleOpenCamera();   // NOVÉ
+      break;
+    case 'PICK_FILE':
+      handlePickFile(data.payload);  // NOVÉ
+      break;
+    case 'START_DICTATION':
+      handleStartDictation(data.payload);  // NOVÉ
+      break;
+    case 'STOP_DICTATION':
+      handleStopDictation();  // NOVÉ
+      break;
+    case 'OPEN_SETTINGS':
+      handleOpenSettings();  // existující kód
+      break;
+  }
+};
+
+// NOVÉ: Fotit
+async function handleOpenCamera() {
+  const { status } = await ImagePicker.requestCameraPermissionsAsync();
+  if (status !== 'granted') {
+    sendToWeb('FILE_PICK_CANCELLED', {});
+    return;
+  }
+  const result = await ImagePicker.launchCameraAsync({
+    base64: true,
+    quality: 0.8,
+  });
+  if (result.canceled) {
+    sendToWeb('FILE_PICK_CANCELLED', {});
+    return;
+  }
+  const asset = result.assets[0];
+  sendToWeb('FILE_PICKED', {
+    name: `photo_${Date.now()}.jpg`,
+    size: asset.fileSize || 0,
+    type: asset.mimeType || 'image/jpeg',
+    base64: asset.base64,
+  });
+}
+
+// NOVÉ: Vybrat soubor
+async function handlePickFile(payload) {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: payload?.accept || ['image/*', 'application/pdf'],
+    copyToCacheDirectory: true,
+  });
+  if (result.canceled) {
+    sendToWeb('FILE_PICK_CANCELLED', {});
+    return;
+  }
+  const file = result.assets[0];
+  const base64 = await FileSystem.readAsStringAsync(file.uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  sendToWeb('FILE_PICKED', {
+    name: file.name,
+    size: file.size,
+    type: file.mimeType,
+    base64: base64,
+  });
+}
+
+// Helper pro posílání zpráv do WebView
+function sendToWeb(action, payload) {
+  webViewRef.current?.injectJavaScript(`
+    window.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({
+        action: '${action}',
+        type: '${action}',
+        payload: ${JSON.stringify(payload)},
+        timestamp: ${Date.now()}
+      })
+    }));
+    true;
+  `);
+}
+```
+
+## Testování
+Po implementaci ověřit:
+1. Fotit → otevře kameru → vyfotí → fotka se objeví jako příloha v AI chatu
+2. Soubor → otevře picker → vybere PDF/obrázek → soubor se objeví jako příloha
+3. Sken → otevře skener → zruší → aplikace se NERESETUJE, zůstane v chatu
+4. Diktovat → spustí se rozpoznávání řeči → text se průběžně objevuje v inputu

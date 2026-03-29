@@ -19,7 +19,9 @@
       "infoPlist": {
         "NSFaceIDUsageDescription": "We use Face ID to secure access to the app. / Používáme Face ID pro zabezpečení přístupu do aplikace.",
         "NSCameraUsageDescription": "The camera is used to scan receipts and invoices. / Kamera slouží ke skenování účtenek a faktur.",
-        "NSPhotoLibraryUsageDescription": "Access to photos allows you to upload documents from your gallery. / Přístup k fotkám umožňuje nahrát doklady z galerie."
+        "NSPhotoLibraryUsageDescription": "Access to photos allows you to upload documents from your gallery. / Přístup k fotkám umožňuje nahrát doklady z galerie.",
+        "NSSpeechRecognitionUsageDescription": "Speech recognition is used for voice dictation in the AI chat. / Rozpoznávání řeči slouží pro hlasové diktování v AI chatu.",
+        "NSMicrophoneUsageDescription": "The microphone is used for voice dictation. / Mikrofon slouží pro hlasové diktování."
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
@@ -61,6 +63,7 @@
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
         "CAMERA",
+        "RECORD_AUDIO",
         "RECEIVE_BOOT_COMPLETED"
       ]
     },
@@ -95,7 +98,8 @@
           "color": "#1A56DB"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-document-picker"
     ],
     "experiments": {
       "typedRoutes": true,

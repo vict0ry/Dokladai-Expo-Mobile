@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -23,15 +23,92 @@ interface DocumentScannerProps {
   onClose: () => void;
 }
 
+const CAMERA_TIMEOUT_MS = 3000;
+
 export default function DocumentScanner({ onDocumentCaptured, onClose }: DocumentScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [cameraFailed, setCameraFailed] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (permission?.granted && !capturedImage) {
+      const delay = setTimeout(() => {
+        setIsCameraActive(true);
+      }, 100);
+      return () => clearTimeout(delay);
+    } else {
+      setIsCameraActive(false);
+      setIsCameraReady(false);
+    }
+  }, [permission?.granted, capturedImage]);
+
+  useEffect(() => {
+    if (isCameraActive && !isCameraReady && !cameraFailed) {
+      timeoutRef.current = setTimeout(() => {
+        if (!isCameraReady) {
+          setCameraFailed(true);
+          setIsCameraActive(false);
+        }
+      }, CAMERA_TIMEOUT_MS);
+    }
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [isCameraActive, isCameraReady, cameraFailed]);
+
+  const handleCameraReady = useCallback(() => {
+    setIsCameraReady(true);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const handleMountError = useCallback(() => {
+    setCameraFailed(true);
+    setIsCameraActive(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (retryDelayRef.current) {
+        clearTimeout(retryDelayRef.current);
+      }
+    };
+  }, []);
+
+  async function fallbackToImagePicker() {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setCapturedImage(result.assets[0].uri);
+      }
+    } catch {
+      Alert.alert("Chyba", "Nepodařilo se otevřít kameru. Zkuste to znovu.");
+    }
+  }
 
   if (!permission) {
     return (
@@ -136,6 +213,8 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
 
   function retake() {
     setCapturedImage(null);
+    setCameraFailed(false);
+    setIsCameraReady(false);
   }
 
   if (capturedImage) {
@@ -195,9 +274,9 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
     );
   }
 
-  return (
-    <View style={[styles.container, { backgroundColor: "#000" }]}>
-      <CameraView ref={cameraRef} style={styles.camera} facing="back">
+  if (cameraFailed) {
+    return (
+      <View style={[styles.container, { backgroundColor: "#000" }]}>
         <View style={[styles.cameraHeader, { paddingTop: insets.top + 10 }]}>
           <TouchableOpacity onPress={onClose} style={styles.headerButton}>
             <Feather name="x" size={24} color="#FFF" />
@@ -208,35 +287,97 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
           </TouchableOpacity>
         </View>
 
-        <View style={styles.scanOverlay}>
-          <View style={styles.scanFrame}>
-            <View style={[styles.corner, styles.cornerTL]} />
-            <View style={[styles.corner, styles.cornerTR]} />
-            <View style={[styles.corner, styles.cornerBL]} />
-            <View style={[styles.corner, styles.cornerBR]} />
-          </View>
-          <Text style={styles.scanHint}>
-            Zarovnejte doklad do rámečku
+        <View style={styles.fallbackContainer}>
+          <Feather name="camera-off" size={48} color="rgba(255,255,255,0.6)" />
+          <Text style={styles.fallbackTitle}>
+            Náhled kamery není dostupný
           </Text>
-        </View>
-
-        <View style={[styles.cameraControls, { paddingBottom: insets.bottom + 20 }]}>
+          <Text style={styles.fallbackText}>
+            Na tomto zařízení nelze zobrazit náhled kamery. Použijte tlačítko níže pro pořízení snímku.
+          </Text>
           <TouchableOpacity
-            style={styles.captureButton}
-            onPress={takePicture}
-            activeOpacity={0.7}
-            disabled={isProcessing}
+            style={[styles.fallbackButton, { backgroundColor: colors.primary }]}
+            onPress={fallbackToImagePicker}
+            activeOpacity={0.8}
           >
-            <View style={styles.captureInner}>
-              {isProcessing ? (
-                <ActivityIndicator size="small" color="#1A56DB" />
-              ) : (
-                <Feather name="camera" size={28} color="#1A56DB" />
-              )}
-            </View>
+            <Feather name="camera" size={20} color="#FFF" />
+            <Text style={styles.fallbackButtonText}>Otevřít kameru</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.fallbackRetryButton}
+            onPress={() => {
+              setCameraFailed(false);
+              setIsCameraReady(false);
+              setIsCameraActive(false);
+              retryDelayRef.current = setTimeout(() => setIsCameraActive(true), 100);
+            }}
+            activeOpacity={0.8}
+          >
+            <Feather name="refresh-cw" size={16} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.fallbackRetryText}>Zkusit znovu</Text>
           </TouchableOpacity>
         </View>
-      </CameraView>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: "#000" }]}>
+      {isCameraActive && (
+        <CameraView
+          ref={cameraRef}
+          style={styles.camera}
+          facing="back"
+          active={isCameraActive}
+          onCameraReady={handleCameraReady}
+          onMountError={handleMountError}
+        >
+          <View style={[styles.cameraHeader, { paddingTop: insets.top + 10 }]}>
+            <TouchableOpacity onPress={onClose} style={styles.headerButton}>
+              <Feather name="x" size={24} color="#FFF" />
+            </TouchableOpacity>
+            <Text style={styles.cameraTitle}>Skenovat doklad</Text>
+            <TouchableOpacity onPress={pickFromGallery} style={styles.headerButton}>
+              <Feather name="image" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.scanOverlay}>
+            <View style={styles.scanFrame}>
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
+            </View>
+            <Text style={styles.scanHint}>
+              Zarovnejte doklad do rámečku
+            </Text>
+          </View>
+
+          <View style={[styles.cameraControls, { paddingBottom: insets.bottom + 20 }]}>
+            <TouchableOpacity
+              style={styles.captureButton}
+              onPress={takePicture}
+              activeOpacity={0.7}
+              disabled={isProcessing}
+            >
+              <View style={styles.captureInner}>
+                {isProcessing ? (
+                  <ActivityIndicator size="small" color="#1A56DB" />
+                ) : (
+                  <Feather name="camera" size={28} color="#1A56DB" />
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      )}
+      {!isCameraReady && isCameraActive && (
+        <View style={styles.cameraLoadingOverlay}>
+          <ActivityIndicator size="large" color="#FFF" />
+          <Text style={styles.cameraLoadingText}>Spouštění kamery...</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -433,5 +574,63 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: 16,
     fontFamily: "Inter_600SemiBold",
+  },
+  cameraLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+  },
+  cameraLoadingText: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+  },
+  fallbackContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  fallbackTitle: {
+    color: "#FFF",
+    fontSize: 20,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
+  },
+  fallbackText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  fallbackButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  fallbackButtonText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontFamily: "Inter_600SemiBold",
+  },
+  fallbackRetryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  fallbackRetryText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
   },
 });

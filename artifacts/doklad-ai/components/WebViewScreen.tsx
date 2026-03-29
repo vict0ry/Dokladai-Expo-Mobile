@@ -162,6 +162,7 @@ export default function WebViewScreen() {
         base64,
         filename,
         mimeType: "image/jpeg",
+        capturedAt: Date.now(),
       });
       webViewRef.current.injectJavaScript(buildInjectionScript(message));
     }

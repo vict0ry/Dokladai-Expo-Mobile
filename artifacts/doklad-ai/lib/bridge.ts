@@ -6,7 +6,9 @@ export type BridgeAction =
   | "FILE_PICKED"
   | "FILE_PICK_CANCELLED"
   | "DICTATION_RESULT"
-  | "DICTATION_ERROR";
+  | "DICTATION_ERROR"
+  | "SHARE_RESULT"
+  | "SHARE_CANCELLED";
 
 export interface BridgeMessage {
   action: BridgeAction;

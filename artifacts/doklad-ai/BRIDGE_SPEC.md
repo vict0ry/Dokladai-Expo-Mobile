@@ -175,6 +175,82 @@ if (isInNativeApp()) {
 }
 ```
 
+### `SHARE` (web → nativní)
+Otevře nativní share sheet (systémový dialog pro sdílení) pomocí React Native `Share` API. Podporuje sdílení textu a URL (ne binární soubory).
+
+```javascript
+window.ReactNativeWebView.postMessage(JSON.stringify({
+  action: 'SHARE',
+  payload: {
+    title: 'Faktura #123',
+    message: 'Sdílím fakturu z Doklad.ai',
+    url: 'https://doklad.ai/invoices/123'
+  }
+}));
+```
+
+| Pole v payload | Typ     | Popis                                      |
+|----------------|---------|--------------------------------------------|
+| `title`        | string? | Nadpis sdílení                             |
+| `message`      | string? | Text ke sdílení                            |
+| `url`          | string? | URL ke sdílení                             |
+
+Alespoň jedno z `message` nebo `url` musí být zadáno.
+
+**Odpovědi (nativní → web):**
+
+#### `SHARE_RESULT`
+Odesláno po úspěšném sdílení.
+
+| Pole v payload | Typ     | Popis              |
+|----------------|---------|---------------------|
+| `success`      | boolean | Vždy `true`         |
+
+#### `SHARE_CANCELLED`
+Odesláno pokud uživatel sdílení zrušil nebo nastala chyba.
+
+| Pole v payload | Typ     | Popis                                     |
+|----------------|---------|-------------------------------------------|
+| `reason`       | string? | `"dismissed"`, `"no_content"`, `"error"`  |
+
+```javascript
+window.addEventListener('message', (event) => {
+  const data = JSON.parse(event.data);
+  switch (data.action) {
+    case 'SHARE_RESULT':
+      console.log('Sdílení úspěšné');
+      break;
+    case 'SHARE_CANCELLED':
+      console.log('Sdílení zrušeno:', data.payload.reason);
+      break;
+  }
+});
+```
+
+---
+
+### `HAPTIC` (web → nativní)
+Vyvolá haptickou odezvu (vibrace) na zařízení.
+
+```javascript
+window.ReactNativeWebView.postMessage(JSON.stringify({
+  action: 'HAPTIC',
+  payload: { type: 'success' }
+}));
+```
+
+| Pole v payload | Typ    | Popis                                                          |
+|----------------|--------|----------------------------------------------------------------|
+| `type`         | string | Typ vibrace: `"success"`, `"warning"`, `"error"`, `"light"`, `"medium"`, `"heavy"` |
+
+**Typy haptické odezvy:**
+- `success` — notifikace úspěchu
+- `warning` — notifikace varování
+- `error` — notifikace chyby
+- `light` — lehký dotek
+- `medium` — střední dotek
+- `heavy` — silný dotek
+
 ---
 
 ## 4. Povolené domény
@@ -214,3 +290,6 @@ Pro posílání push notifikací používejte [Expo Push API](https://docs.expo.
 | **Střední** | `OPEN_SCANNER` | Přidat tlačítko pro otevření skeneru z webu |
 | **Nízká** | `BIOMETRIC_STATUS` | Logovat/zobrazit stav biometrie |
 | **Nízká** | `OPEN_SETTINGS` | Přidat odkaz na nativní nastavení |
+| **Střední** | `SHARE` | Otevřít nativní share sheet pro sdílení URL/textu |
+| **Střední** | `SHARE_RESULT` / `SHARE_CANCELLED` | Zpracovat výsledek sdílení |
+| **Nízká** | `HAPTIC` | Vyvolat haptickou odezvu z webu |

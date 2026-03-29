@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
+  Share,
 } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,6 +21,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import Constants, { ExecutionEnvironment } from "expo-constants";
+import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useNetwork } from "@/context/NetworkContext";
 import { useAuth } from "@/context/AuthContext";
@@ -175,6 +177,7 @@ export default function WebViewScreen() {
 
   function handleDocumentCaptured(base64: string, filename: string) {
     setShowScanner(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     sendToWeb("FILE_PICKED", {
       name: filename,
       size: Math.round(base64.length * 0.75),
@@ -209,6 +212,7 @@ export default function WebViewScreen() {
       }
 
       const asset = result.assets[0];
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       sendToWeb("FILE_PICKED", {
         name: `photo_${Date.now()}.jpg`,
         size: asset.fileSize || Math.round((asset.base64?.length || 0) * 0.75),
@@ -247,6 +251,7 @@ export default function WebViewScreen() {
         encoding: FileSystem.EncodingType.Base64,
       });
 
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       sendToWeb("FILE_PICKED", {
         name: file.name,
         size: file.size || Math.round(base64.length * 0.75),
@@ -322,6 +327,62 @@ export default function WebViewScreen() {
     }
   }
 
+  async function handleShare(payload?: { title?: string; message?: string; url?: string }) {
+    try {
+      const title = payload?.title || "";
+      const url = payload?.url || "";
+      const message = payload?.message || "";
+
+      if (!url && !message) {
+        sendToWeb("SHARE_CANCELLED", { reason: "no_content" });
+        return;
+      }
+
+      const shareContent: { title?: string; message?: string; url?: string } = {};
+      if (title) shareContent.title = title;
+      if (message) shareContent.message = message;
+      if (url) shareContent.url = url;
+
+      const result = await Share.share(shareContent);
+
+      if (result.action === Share.sharedAction) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        sendToWeb("SHARE_RESULT", { success: true });
+      } else if (result.action === Share.dismissedAction) {
+        sendToWeb("SHARE_CANCELLED", { reason: "dismissed" });
+      }
+    } catch {
+      sendToWeb("SHARE_CANCELLED", { reason: "error" });
+    }
+  }
+
+  async function handleHaptic(payload?: { type?: string }) {
+    const hapticType = payload?.type || "light";
+    switch (hapticType) {
+      case "success":
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        break;
+      case "warning":
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        break;
+      case "error":
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        break;
+      case "light":
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        break;
+      case "medium":
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        break;
+      case "heavy":
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        break;
+      default:
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        break;
+    }
+  }
+
   function sendAppReady() {
     if (webViewRef.current && isTrustedUrl(currentUrl)) {
       const readyMsg = createBridgeMessage("APP_READY", {
@@ -355,6 +416,7 @@ export default function WebViewScreen() {
 
       switch (action) {
         case "OPEN_SCANNER":
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setShowScanner(true);
           break;
         case "OPEN_CAMERA":
@@ -370,7 +432,14 @@ export default function WebViewScreen() {
           handleStopDictation();
           break;
         case "OPEN_SETTINGS":
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setShowSettings(true);
+          break;
+        case "SHARE":
+          handleShare(data.payload);
+          break;
+        case "HAPTIC":
+          handleHaptic(data.payload);
           break;
       }
     } catch {

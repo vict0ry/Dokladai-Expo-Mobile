@@ -19,7 +19,6 @@ import { useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import Colors from "@/constants/colors";
 import { useNetwork } from "@/context/NetworkContext";
 import { useAuth } from "@/context/AuthContext";
@@ -59,9 +58,13 @@ async function getVoiceModule() {
 }
 
 async function requestDictationPermissions(): Promise<boolean> {
-  const result =
-    await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-  return result.granted;
+  try {
+    const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    return result.granted;
+  } catch {
+    return false;
+  }
 }
 
 function showPermissionDeniedAlert() {

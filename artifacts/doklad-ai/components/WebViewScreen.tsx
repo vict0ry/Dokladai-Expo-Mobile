@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   Alert,
+  Linking,
 } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +19,7 @@ import { useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import Colors from "@/constants/colors";
 import { useNetwork } from "@/context/NetworkContext";
 import { useAuth } from "@/context/AuthContext";
@@ -54,6 +56,23 @@ async function getVoiceModule() {
   } catch {
     return null;
   }
+}
+
+async function requestDictationPermissions(): Promise<boolean> {
+  const result =
+    await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+  return result.granted;
+}
+
+function showPermissionDeniedAlert() {
+  const message =
+    Platform.OS === "ios"
+      ? "Pro hlasové diktování je potřeba povolit přístup k mikrofonu a rozpoznávání řeči v nastavení."
+      : "Pro hlasové diktování je potřeba povolit přístup k mikrofonu v nastavení.";
+  Alert.alert("Oprávnění zamítnuto", message, [
+    { text: "Zrušit", style: "cancel" },
+    { text: "Otevřít nastavení", onPress: () => Linking.openSettings() },
+  ]);
 }
 
 const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024;
@@ -246,6 +265,13 @@ export default function WebViewScreen() {
     }
 
     try {
+      const hasPermission = await requestDictationPermissions();
+      if (!hasPermission) {
+        sendToWeb("DICTATION_ERROR", { error: "permission_denied" });
+        showPermissionDeniedAlert();
+        return;
+      }
+
       lastPartialTranscript.current = "";
 
       Voice.onSpeechResults = (e: any) => {

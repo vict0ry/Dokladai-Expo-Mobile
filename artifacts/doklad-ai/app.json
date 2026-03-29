@@ -99,7 +99,14 @@
         }
       ],
       "expo-secure-store",
-      "expo-document-picker"
+      "expo-document-picker",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "The microphone is used for voice dictation. / Mikrofon slouží pro hlasové diktování.",
+          "speechRecognitionPermission": "Speech recognition is used for voice dictation in the AI chat. / Rozpoznávání řeči slouží pro hlasové diktování v AI chatu."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

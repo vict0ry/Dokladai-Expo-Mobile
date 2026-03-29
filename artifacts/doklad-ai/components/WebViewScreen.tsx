@@ -19,6 +19,7 @@ import { useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import Colors from "@/constants/colors";
 import { useNetwork } from "@/context/NetworkContext";
 import { useAuth } from "@/context/AuthContext";
@@ -45,9 +46,14 @@ function isTrustedUrl(url: string): boolean {
   }
 }
 
+function isExpoGo(): boolean {
+  return Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+}
+
 let voiceModule: any = null;
 
 async function getVoiceModule() {
+  if (isExpoGo()) return null;
   if (voiceModule) return voiceModule;
   try {
     voiceModule = (await import("@react-native-voice/voice")).default;
@@ -58,6 +64,7 @@ async function getVoiceModule() {
 }
 
 async function requestDictationPermissions(): Promise<boolean> {
+  if (isExpoGo()) return false;
   try {
     const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
     const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();

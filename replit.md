@@ -15,13 +15,15 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Mobile**: Expo (React Native) with WebView, biometric auth, push notifications
 
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server
+│   └── doklad-ai/          # Expo React Native mobile app
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
@@ -61,6 +63,26 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
 - `pnpm --filter @workspace/api-server run dev` — run the dev server
 - `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
 - Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+
+### `artifacts/doklad-ai` (`@workspace/doklad-ai`)
+
+Expo React Native mobile app for Doklad.ai — an accounting/invoicing web application wrapper.
+
+- **WebView**: Loads `https://doklad.ai` in a native WebView with pull-to-refresh, back navigation, error handling
+- **Biometric auth**: Face ID / Touch ID via `expo-local-authentication`, managed by `context/AuthContext.tsx`
+- **Push notifications**: Via `expo-notifications`, managed by `context/NotificationContext.tsx`
+- **Splash screen**: Custom branded splash with blue (#1A56DB) background
+- **App icon**: Custom generated icon at `assets/images/icon.png`
+- **EAS Build**: Configured via `eas.json` with development, preview, and production profiles
+- **Bundle IDs**: `ai.doklad.app` (iOS & Android)
+
+Key files:
+- `app/index.tsx` — Main entry, shows lock screen or WebView based on auth state
+- `components/WebViewScreen.tsx` — WebView component loading doklad.ai
+- `components/BiometricLockScreen.tsx` — Biometric authentication screen
+- `context/AuthContext.tsx` — Biometric auth state management
+- `context/NotificationContext.tsx` — Push notification registration and handling
+- `eas.json` — EAS Build configuration for Android & iOS
 
 ### `lib/db` (`@workspace/db`)
 

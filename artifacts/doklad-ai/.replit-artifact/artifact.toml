@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/doklad-ai/"
+title = "Doklad.ai"
+version = "1.0.0"
+id = "artifacts/doklad-ai"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/doklad-ai/" ]
+localPort = 20856
+
+[services.development]
+run = "pnpm --filter @workspace/doklad-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/doklad-ai", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/doklad-ai", "run", "serve" ]
+
+[services.env]
+PORT = "20856"
+BASE_PATH = "/doklad-ai/"

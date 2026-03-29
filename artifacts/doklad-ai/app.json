@@ -1,0 +1,74 @@
+{
+  "expo": {
+    "name": "Doklad.ai",
+    "slug": "doklad-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "doklad-ai",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A56DB"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.doklad.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Používáme Face ID pro zabezpečení přístupu do aplikace.",
+        "NSCameraUsageDescription": "Kamera je potřeba pro skenování dokladů."
+      }
+    },
+    "android": {
+      "package": "ai.doklad.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#1A56DB"
+      },
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "CAMERA",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://doklad.ai"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Používáme Face ID pro zabezpečení přístupu do aplikace."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1A56DB"
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}

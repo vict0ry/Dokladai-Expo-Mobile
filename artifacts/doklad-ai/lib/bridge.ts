@@ -1,5 +1,6 @@
 export type BridgeAction =
   | "DOCUMENT_SCANNED"
+  | "SCAN_CANCELLED"
   | "BIOMETRIC_STATUS"
   | "NOTIFICATION_TOKEN"
   | "APP_READY"

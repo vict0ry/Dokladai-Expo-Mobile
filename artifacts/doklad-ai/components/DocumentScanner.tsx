@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -17,26 +17,140 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 
+/**
+ * Native document scanner.
+ *
+ * Primary path: react-native-document-scanner-plugin → VisionKit
+ * (`VNDocumentCameraViewController`) on iOS 13+, ML Kit DocumentScanner on
+ * Android. These give Apple/Google-grade edge detection, perspective
+ * correction, glare removal and auto-shutter — far better than the OpenCV.js
+ * web fallback or a raw camera capture, which is what we need for App Store
+ * review (review team specifically dislikes apps that ship a worse-than-system
+ * scanner experience).
+ *
+ * Fallbacks:
+ *  - Plugin missing or platform unsupported → expo-image-picker camera,
+ *    then expo-image-picker gallery — same UX the previous version had.
+ *  - User can always pick a photo from the gallery via the icon button on the
+ *    preview screen.
+ *
+ * Output stays compatible with WebViewScreen.handleDocumentCaptured(base64,
+ * filename), which forwards to the web bridge as DOCUMENT_SCANNED.
+ */
+
 interface DocumentScannerProps {
   onDocumentCaptured: (base64: string, filename: string) => void;
   onClose: () => void;
 }
 
+// react-native-document-scanner-plugin is a native module; we load it lazily
+// to keep the preview screen renderable on platforms where it isn't compiled
+// in (Expo Go, web). The dynamic require pattern here is how Expo guides
+// optional-native loading — `require` is intentional so Metro can resolve it
+// at bundle time without breaking when it's missing.
+type NativeScanResult = { scannedImages?: string[]; status?: string };
+type NativeScanOptions = {
+  croppedImageQuality?: number;
+  maxNumDocuments?: number;
+  responseType?: string;
+};
+type NativeScannerModule = {
+  scanDocument: (opts?: NativeScanOptions) => Promise<NativeScanResult>;
+  ResponseType?: { Base64?: string; ImageFilePath?: string };
+};
+
+function loadNativeScanner(): NativeScannerModule | null {
+  if (Platform.OS !== "ios" && Platform.OS !== "android") return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require("react-native-document-scanner-plugin");
+    const scanner = (mod && (mod.default || mod)) as NativeScannerModule;
+    if (typeof scanner?.scanDocument !== "function") return null;
+    return scanner;
+  } catch {
+    return null;
+  }
+}
+
 export default function DocumentScanner({ onDocumentCaptured, onClose }: DocumentScannerProps) {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [capturedBase64, setCapturedBase64] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
+  const launchedOnceRef = useRef(false);
 
   useEffect(() => {
-    if (!capturedImage) {
-      launchCamera();
-    }
+    if (launchedOnceRef.current || capturedImage) return;
+    launchedOnceRef.current = true;
+    launchScanner();
   }, []);
 
-  async function launchCamera() {
+  /**
+   * Try native VisionKit/ML Kit first; fall back to plain camera if the
+   * plugin isn't available. Both paths converge on `setCapturedImage` /
+   * `setCapturedBase64`, then the user confirms.
+   */
+  async function launchScanner() {
+    const native = loadNativeScanner();
+    if (native) {
+      const ok = await launchNativeScanner(native);
+      if (ok) return;
+      // Fall through to camera fallback if native returned no usable image
+      // (cancel is handled inside launchNativeScanner and closes the screen).
+    }
+    await launchCameraFallback();
+  }
+
+  /** @returns true if we got an image (or user cancelled cleanly) */
+  async function launchNativeScanner(native: NativeScannerModule): Promise<boolean> {
+    try {
+      const responseType = native.ResponseType?.Base64 || "base64";
+      const result = await native.scanDocument({
+        croppedImageQuality: 85,
+        maxNumDocuments: 1,
+        responseType,
+      });
+
+      if (result.status === "cancel") {
+        onClose();
+        return true;
+      }
+
+      const first = result.scannedImages?.[0];
+      if (!first) {
+        // Plugin returned success but no image — let camera fallback try.
+        return false;
+      }
+
+      // The plugin returns either a raw base64 string or a file:// path
+      // depending on responseType. Handle both — some platforms ignore the
+      // option silently.
+      if (first.startsWith("file://") || first.startsWith("/")) {
+        const uri = first.startsWith("file://") ? first : `file://${first}`;
+        const base64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: "base64",
+        });
+        setCapturedImage(uri);
+        setCapturedBase64(base64);
+      } else {
+        // Raw base64 — synthesise a data URL for the on-device preview.
+        setCapturedImage(`data:image/jpeg;base64,${first}`);
+        setCapturedBase64(first);
+      }
+      return true;
+    } catch (err) {
+      // Most common: user denied camera permission, or native module is
+      // present in JS but the iOS/Android side isn't linked (dev build out
+      // of date). Fall back rather than dead-ending the user.
+      console.warn("[DocumentScanner] native scan failed:", err);
+      return false;
+    }
+  }
+
+  async function launchCameraFallback() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
       Alert.alert(
@@ -44,10 +158,13 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
         "Pro skenování dokladů potřebujeme přístup k vaší kameře. Povolte přístup v nastavení.",
         [
           { text: "Zrušit", style: "cancel", onPress: onClose },
-          { text: "Otevřít nastavení", onPress: () => {
-            import("react-native").then(({ Linking }) => Linking.openSettings());
-            onClose();
-          }},
+          {
+            text: "Otevřít nastavení",
+            onPress: () => {
+              import("react-native").then(({ Linking }) => Linking.openSettings());
+              onClose();
+            },
+          },
         ]
       );
       return;
@@ -55,7 +172,8 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
 
     try {
       const result = await ImagePicker.launchCameraAsync({
-        quality: 0.8,
+        quality: 0.85,
+        base64: true,
       });
 
       if (result.canceled || !result.assets?.[0]) {
@@ -63,7 +181,9 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
         return;
       }
 
-      setCapturedImage(result.assets[0].uri);
+      const asset = result.assets[0];
+      setCapturedImage(asset.uri);
+      if (asset.base64) setCapturedBase64(asset.base64);
     } catch {
       Alert.alert("Chyba", "Nepodařilo se otevřít kameru. Zkuste to znovu.");
       onClose();
@@ -74,11 +194,14 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
+        quality: 0.85,
+        base64: true,
       });
 
       if (!result.canceled && result.assets[0]) {
-        setCapturedImage(result.assets[0].uri);
+        const asset = result.assets[0];
+        setCapturedImage(asset.uri);
+        setCapturedBase64(asset.base64 ?? null);
       }
     } catch {
       Alert.alert("Chyba", "Nepodařilo se otevřít galerii. Zkuste to znovu.");
@@ -94,9 +217,23 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
     }
 
     try {
-      const base64 = await FileSystem.readAsStringAsync(capturedImage, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Prefer the base64 we already have (native scanner / camera with
+      // base64:true / gallery). Only re-read from disk if for some reason
+      // we don't — keeps the confirm step instant in the common path.
+      let base64 = capturedBase64;
+      if (!base64) {
+        if (capturedImage.startsWith("data:")) {
+          base64 = capturedImage.split(",")[1] ?? null;
+        } else {
+          base64 = await FileSystem.readAsStringAsync(capturedImage, {
+            encoding: "base64",
+          });
+        }
+      }
+      if (!base64) {
+        Alert.alert("Chyba", "Snímek se nepodařilo načíst.");
+        return;
+      }
 
       const timestamp = Date.now();
       const filename = `doklad_${timestamp}.jpg`;
@@ -111,7 +248,8 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
 
   function retake() {
     setCapturedImage(null);
-    launchCamera();
+    setCapturedBase64(null);
+    launchScanner();
   }
 
   if (!capturedImage) {
@@ -125,7 +263,7 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Otevírám kameru...
+            Otevírám skener...
           </Text>
           <TouchableOpacity
             style={[styles.galleryButton, { borderColor: colors.primary }]}
@@ -156,14 +294,6 @@ export default function DocumentScanner({ onDocumentCaptured, onClose }: Documen
 
       <View style={styles.cropContainer}>
         <Image source={{ uri: capturedImage }} style={styles.previewImage} resizeMode="contain" />
-        <View style={styles.cropOverlay} pointerEvents="none">
-          <View style={styles.cropFrame}>
-            <View style={[styles.corner, styles.cornerTL]} />
-            <View style={[styles.corner, styles.cornerTR]} />
-            <View style={[styles.corner, styles.cornerBL]} />
-            <View style={[styles.corner, styles.cornerBR]} />
-          </View>
-        </View>
       </View>
 
       <Text style={styles.cropHint}>
@@ -255,50 +385,6 @@ const styles = StyleSheet.create({
   cropContainer: {
     flex: 1,
     position: "relative",
-  },
-  cropOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cropFrame: {
-    width: "85%",
-    aspectRatio: 0.7,
-    position: "relative",
-  },
-  corner: {
-    position: "absolute",
-    width: 40,
-    height: 40,
-    borderColor: "#FFF",
-  },
-  cornerTL: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 8,
-  },
-  cornerTR: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 8,
-  },
-  cornerBL: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 8,
-  },
-  cornerBR: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 8,
   },
   cropHint: {
     color: "rgba(255,255,255,0.7)",

@@ -146,7 +146,13 @@
         }
       ],
       "expo-secure-store",
-      "expo-document-picker"
+      "expo-document-picker",
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "The camera is used to scan receipts and invoices. / Kamera slouží ke skenování účtenek a faktur."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

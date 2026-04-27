@@ -178,6 +178,16 @@ export default function WebViewScreen() {
   function handleDocumentCaptured(base64: string, filename: string) {
     setShowScanner(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Web's requestNativeScan() awaits DOCUMENT_SCANNED — that's the one the
+    // scan flow listens for. We also emit FILE_PICKED so older web bundles
+    // (pre-rollout) still work via their generic file-picked handler.
+    const capturedAt = Date.now();
+    sendToWeb("DOCUMENT_SCANNED", {
+      base64,
+      filename,
+      mimeType: "image/jpeg",
+      capturedAt,
+    });
     sendToWeb("FILE_PICKED", {
       name: filename,
       size: Math.round(base64.length * 0.75),
@@ -188,6 +198,9 @@ export default function WebViewScreen() {
 
   function handleScannerClose() {
     setShowScanner(false);
+    // Web's requestNativeScan() awaits SCAN_CANCELLED on user dismissal;
+    // FILE_PICK_CANCELLED kept for the generic file-picker code path.
+    sendToWeb("SCAN_CANCELLED", {});
     sendToWeb("FILE_PICK_CANCELLED", {});
   }
 

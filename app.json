@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "f60c3e43-6485-4638-bb91-6f786f2bec16"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.victoreliot.workspace",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
